@@ -1,0 +1,6 @@
+{
+  "name": "Chronos Calendar",
+  "description": "A sophisticated event management system with smart scheduling, audio alarms, browser notifications, and email reminders.",
+  "requestFramePermissions": ["notifications"],
+  "majorCapabilities": ["AI-assisted event creation", "Full-stack event persistence", "Cross-device sync"]
+}

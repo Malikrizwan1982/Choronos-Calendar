@@ -1,0 +1,70 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Phase 3: Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // User Validation
+    function isValidUser(data) {
+      return data.keys().hasAll(['email', 'displayName']) &&
+             data.keys().size() >= 2 &&
+             data.email is string && data.email.size() <= 256 &&
+             data.displayName is string && data.displayName.size() <= 128;
+    }
+
+    // Event Validation
+    function isValidEvent(data) {
+      return data.keys().hasAll(['title', 'startTime', 'endTime', 'userId']) &&
+             data.title is string && data.title.size() <= 200 &&
+             data.startTime is string && // ISO timestamp
+             data.endTime is string &&
+             data.userId == request.auth.uid &&
+             (!data.keys().contains('description') || (data.description is string && data.description.size() <= 2000)) &&
+             (!data.keys().contains('reminders') || (data.reminders is list && data.reminders.size() <= 10));
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) &&
+                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'settings', 'email']);
+    }
+
+    // Events Collection
+    match /events/{eventId} {
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      allow create: if isSignedIn() && 
+                      isValidEvent(request.resource.data) && 
+                      request.resource.data.userId == request.auth.uid;
+                      
+      allow update: if isSignedIn() && 
+                      isOwner(resource.data.userId) &&
+                      isValidEvent(request.resource.data) &&
+                      request.resource.data.userId == resource.data.userId &&
+                      (
+                        // Action: Update Details
+                        request.resource.data.diff(resource.data).affectedKeys().hasAny(['title', 'description', 'startTime', 'endTime', 'allDay', 'color', 'reminders', 'updatedAt'])
+                      );
+                      
+      allow delete: if isSignedIn() && isOwner(resource.data.userId);
+    }
+  }
+}
